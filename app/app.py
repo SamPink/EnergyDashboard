@@ -1,71 +1,114 @@
-# Import necessary libraries
 import dash
-import dash_core_components as dcc
-import dash_html_components as html
+import dash_bootstrap_components as dbc
+from dash import html, dcc, Input, Output
 import plotly.express as px
-from dash.dependencies import Input, Output
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from dal import DataAccessLayer  # Make sure to implement this
+from dal import DataAccessLayer  # Ensure this DAL module is implemented
 import pandas as pd
+
 
 # Database setup
 engine = create_engine("sqlite:///generation.db")
 Session = sessionmaker(bind=engine)
 
-# Create a Dash application
-app = dash.Dash(__name__)
+# Choose a Bootswatch theme
+BOOTSTRAP_THEME = dbc.themes.FLATLY  # or any other theme: CYBORG, LUX, etc.
 
-# Define the layout of the application
+app = dash.Dash(__name__, external_stylesheets=[BOOTSTRAP_THEME])
+
+
+# Define a function to fetch data from the database
+def fetch_data(dal_method):
+    session = Session()
+    dal = DataAccessLayer(session)
+    data = getattr(dal, dal_method)()
+    session.close()
+    return data
+
+
+# Define the layout of the application, including explanatory text
 app.layout = html.Div(
+    className="container",
     children=[
-        html.H1(children="Energy Generation Dashboard"),
-        # Interval component to trigger callbacks
-        dcc.Interval(
-            id="interval-component",
-            interval=1 * 60000,  # in milliseconds
-            n_intervals=0,
+        html.H1("Energy Generation Dashboard", className="header-title"),
+        html.Div(
+            className="text-box",
+            children=[
+                dcc.Markdown(
+                    """
+                    ## Carbon Intensity Over Time
+                    This graph shows the carbon intensity of electricity generation over time. 
+                    Lower carbon intensity indicates a cleaner energy mix.
+                """
+                )
+            ],
         ),
-        # Carbon Intensity Over Time Graph
         dcc.Graph(id="carbon-intensity-graph"),
-        # Total Demand and Generation Over Time Graph
+        html.Div(
+            className="text-box",
+            children=[
+                dcc.Markdown(
+                    """
+                    ## Demand vs Generation Over Time
+                    This graph compares the total electricity demand with the total generation over time.
+                    It highlights the balance between energy consumption and production.
+                """
+                )
+            ],
+        ),
         dcc.Graph(id="demand-generation-graph"),
-        # Energy Mix Pie Chart
+        html.Div(
+            className="text-box",
+            children=[
+                dcc.Markdown(
+                    """
+                    ## Energy Mix
+                    This pie chart displays the proportion of different energy types contributing to the total generation.
+                    A diverse energy mix can be more resilient and sustainable.
+                """
+                )
+            ],
+        ),
         dcc.Graph(id="energy-mix-pie-chart"),
-        # Demand Breakdown Bar Chart
+        html.Div(
+            className="text-box",
+            children=[
+                dcc.Markdown(
+                    """
+                    ## Demand Breakdown
+                    The bar chart shows the breakdown of electricity demand over time, 
+                    including net demand, gross demand, and various other metrics.
+                """
+                )
+            ],
+        ),
         dcc.Graph(id="demand-breakdown-bar-chart"),
-        # Add other components like dropdowns or date pickers if needed
-        # ...
-    ]
+        # Interval component to trigger callbacks
+        dcc.Interval(id="interval-component", interval=60000, n_intervals=0),
+    ],
 )
 
 
-# Callback for Carbon Intensity Over Time Graph
 @app.callback(
     Output("carbon-intensity-graph", "figure"),
     [Input("interval-component", "n_intervals")],
 )
 def update_carbon_intensity_graph(n_intervals):
-    session = Session()
-    dal = DataAccessLayer(session)
-    data = dal.get_carbon_intensity_over_time()
+    data = fetch_data("get_carbon_intensity_over_time")
     df = pd.DataFrame(data, columns=["Time", "Carbon Intensity"])
     figure = px.line(
         df, x="Time", y="Carbon Intensity", title="Carbon Intensity Over Time"
     )
-    session.close()
     return figure
 
 
-# Callback for Total Demand and Generation Over Time Graph
 @app.callback(
     Output("demand-generation-graph", "figure"),
     [Input("interval-component", "n_intervals")],
 )
 def update_demand_generation_graph(n_intervals):
-    session = Session()
-    dal = DataAccessLayer(session)
-    data = dal.get_total_demand_and_generation_over_time()
+    data = fetch_data("get_total_demand_and_generation_over_time")
     df = pd.DataFrame(data, columns=["Time", "Total Demand", "Total Generation"])
     figure = px.line(
         df,
@@ -73,47 +116,28 @@ def update_demand_generation_graph(n_intervals):
         y=["Total Demand", "Total Generation"],
         title="Demand vs Generation Over Time",
     )
-    session.close()
     return figure
 
 
-# Callback for Energy Mix Pie Chart
 @app.callback(
     Output("energy-mix-pie-chart", "figure"),
     [Input("interval-component", "n_intervals")],
 )
 def update_energy_mix_pie_chart(n_intervals):
-    session = Session()
-    dal = DataAccessLayer(session)
-    data = dal.get_energy_mix()
+    data = fetch_data("get_energy_mix")
     df = pd.DataFrame(data, columns=["Energy Type", "Total Generation"])
     figure = px.pie(
-        df, values="Total Generation", names="Energy Type", title="Energy Mix"
+        df, names="Energy Type", values="Total Generation", title="Energy Mix"
     )
-    session.close()
     return figure
 
 
-# Callback for Demand Breakdown Bar Chart
 @app.callback(
     Output("demand-breakdown-bar-chart", "figure"),
     [Input("interval-component", "n_intervals")],
 )
 def update_demand_breakdown_bar_chart(n_intervals):
-    session = Session()
-    dal = DataAccessLayer(session)
-    data = dal.get_demand_breakdown()
-
-    """ Period.start,
-                Demand.net,
-                Demand.gross,
-                Demand.pumped_storage,
-                Demand.exports,
-                Demand.station_load,
-                Demand.embedded_wind,
-                Demand.embedded_solar,
-                Demand.actual_net,
-                Demand.actual_gross, """
+    data = fetch_data("get_demand_breakdown")
     df = pd.DataFrame(
         data,
         columns=[
@@ -145,10 +169,8 @@ def update_demand_breakdown_bar_chart(n_intervals):
         ],
         title="Demand Breakdown",
     )
-    session.close()
     return figure
 
 
-# Run the Dash app
 if __name__ == "__main__":
     app.run_server(debug=True)
