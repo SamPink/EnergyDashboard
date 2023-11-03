@@ -6,12 +6,18 @@ from sqlalchemy import (
     String,
     DateTime,
     ForeignKey,
+    UniqueConstraint,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 
+import dateutil.parser
+
 # Create a base class for declarative class definitions
 Base = declarative_base()
+
+# create file data.db
+engine = create_engine("sqlite:///data.db")
 
 
 # Define the Period model
@@ -24,10 +30,21 @@ class Period(Base):
     carbon_intensity = Column(Float)
     settlement_period = Column(Integer)
 
+    UniqueConstraint("start", "end", name="uix_start_end")
+
     # Relationships
     demand = relationship("Demand", back_populates="period", uselist=False)
     generation = relationship("Generation", back_populates="period", uselist=False)
     energy_types = relationship("EnergyType", back_populates="period")
+
+    @classmethod
+    def from_dict(cls, data):
+        return cls(
+            start=dateutil.parser.isoparse(data["start"]),
+            end=dateutil.parser.isoparse(data["end"]),
+            carbon_intensity=data["carbonIntensity"],
+            settlement_period=data["settlementPeriod"],
+        )
 
 
 # Define the Demand model
@@ -49,6 +66,21 @@ class Demand(Base):
     # Relationship
     period = relationship("Period", back_populates="demand")
 
+    @classmethod
+    def from_dict(cls, data, period):
+        return cls(
+            period=period,
+            net=data["demandNet"],
+            gross=data["demandGross"],
+            pumped_storage=data["pumpedStorage"],
+            exports=data["exports"],
+            station_load=data["stationLoad"],
+            embedded_wind=data["embeddedWind"],
+            embedded_solar=data["embeddedSolar"],
+            actual_net=data["actualNet"],
+            actual_gross=data["actualGross"],
+        )
+
 
 # Define the Generation model
 class Generation(Base):
@@ -60,6 +92,13 @@ class Generation(Base):
 
     # Relationship
     period = relationship("Period", back_populates="generation")
+
+    @classmethod
+    def from_dict(cls, data, period):
+        return cls(
+            period=period,
+            total=data["generationTotal"],
+        )
 
 
 # Define the EnergyType model
@@ -75,25 +114,24 @@ class EnergyType(Base):
     # Relationship
     period = relationship("Period", back_populates="energy_types")
 
+    @classmethod
+    def from_dict(cls, data, period):
+        return [
+            cls(
+                period=period,
+                type_name=gen_type,
+                total=values["total"],
+                percentage=values["percentage"],
+            )
+            for gen_type, values in data.items()
+        ]
 
-# Create an in-memory SQLite database
-engine = create_engine("sqlite:///:memory:")
 
-# Create all tables in the engine
-Base.metadata.create_all(engine)
+if __name__ == "__main__":
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
 
-# Create a session to interact with the database
-Session = sessionmaker(bind=engine)
-session = Session()
-
-# Now the database and tables are set up in memory
-# Next, we would populate it with data from our JSON file
-
-# Since the database is in memory, it will not persist after this session ends
-# To have a persistent database, we would use a file-based SQLite database or another database server
-
-# Placeholder for data insertion, which we'll do next
-"Models defined and database schema created in memory."
-
-# Confirming if tables were created
-print(engine.table_names())
+    # Confirming if tables were created
+    print(engine.table_names())

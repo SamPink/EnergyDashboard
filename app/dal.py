@@ -7,9 +7,11 @@ class DataAccessLayer:
         self.session = session
 
     def get_carbon_intensity_over_time(self):
+        """Retrieve carbon intensity over time."""
         return self.session.query(Period.start, Period.carbon_intensity).all()
 
     def get_total_demand_and_generation_over_time(self):
+        """Retrieve total demand and generation over time."""
         return (
             self.session.query(
                 Period.start,
@@ -23,16 +25,25 @@ class DataAccessLayer:
         )
 
     def get_energy_mix(self, specific_time=None):
-        query = self.session.query(
-            EnergyType.type_name, func.sum(EnergyType.total).label("total_generation")
-        ).group_by(EnergyType.type_name)
+        """Retrieve energy mix."""
+        query = (
+            self.session.query(
+                EnergyType.type_name,
+                func.sum(EnergyType.total).label("total_generation"),
+            )
+            .join(Period)
+            .group_by(EnergyType.type_name)
+        )
+
         if specific_time:
             query = query.filter(
                 Period.start <= specific_time, Period.end > specific_time
             )
+
         return query.all()
 
     def get_demand_breakdown(self):
+        """Retrieve demand breakdown."""
         return (
             self.session.query(
                 Period.start,

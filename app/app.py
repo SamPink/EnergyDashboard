@@ -2,28 +2,25 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import html, dcc, Input, Output
 import plotly.express as px
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from dal import DataAccessLayer  # Ensure this DAL module is implemented
+from sqlalchemy.orm import scoped_session, sessionmaker
+from db import engine
+from dal import DataAccessLayer
 import pandas as pd
 
-
 # Database setup
-engine = create_engine("sqlite:///generation.db")
-Session = sessionmaker(bind=engine)
+Session = scoped_session(sessionmaker(bind=engine))
 
 # Choose a Bootswatch theme
-BOOTSTRAP_THEME = dbc.themes.FLATLY  # or any other theme: CYBORG, LUX, etc.
+BOOTSTRAP_THEME = dbc.themes.FLATLY
 
 app = dash.Dash(__name__, external_stylesheets=[BOOTSTRAP_THEME])
 
 
 # Define a function to fetch data from the database
 def fetch_data(dal_method):
-    session = Session()
-    dal = DataAccessLayer(session)
-    data = getattr(dal, dal_method)()
-    session.close()
+    with Session() as session:
+        dal = DataAccessLayer(session)
+        data = getattr(dal, dal_method)()
     return data
 
 
@@ -90,87 +87,54 @@ app.layout = html.Div(
 )
 
 
-@app.callback(
-    Output("carbon-intensity-graph", "figure"),
-    [Input("interval-component", "n_intervals")],
-)
-def update_carbon_intensity_graph(n_intervals):
-    data = fetch_data("get_carbon_intensity_over_time")
-    df = pd.DataFrame(data, columns=["Time", "Carbon Intensity"])
-    figure = px.line(
-        df, x="Time", y="Carbon Intensity", title="Carbon Intensity Over Time"
+# Callback function generator to reduce duplication
+def generate_callback(output_component_id, dal_method, figure_generator):
+    @app.callback(
+        Output(output_component_id, "figure"),
+        [Input("interval-component", "n_intervals")],
     )
-    return figure
+    def update_graph(n_intervals):
+        data = fetch_data(dal_method)
+        df = pd.DataFrame(data)
+        figure = figure_generator(df)
+        return figure
+
+    return update_graph
 
 
-@app.callback(
-    Output("demand-generation-graph", "figure"),
-    [Input("interval-component", "n_intervals")],
+# Generate callback functions for each graph
+update_carbon_intensity_graph = generate_callback(
+    "carbon-intensity-graph",
+    "get_carbon_intensity_over_time",
+    lambda df: px.line(
+        df, x="Time", y="Carbon Intensity", title="Carbon Intensity Over Time"
+    ),
 )
-def update_demand_generation_graph(n_intervals):
-    data = fetch_data("get_total_demand_and_generation_over_time")
-    df = pd.DataFrame(data, columns=["Time", "Total Demand", "Total Generation"])
-    figure = px.line(
+
+update_demand_generation_graph = generate_callback(
+    "demand-generation-graph",
+    "get_total_demand_and_generation_over_time",
+    lambda df: px.line(
         df,
         x="Time",
         y=["Total Demand", "Total Generation"],
         title="Demand vs Generation Over Time",
-    )
-    return figure
-
-
-@app.callback(
-    Output("energy-mix-pie-chart", "figure"),
-    [Input("interval-component", "n_intervals")],
+    ),
 )
-def update_energy_mix_pie_chart(n_intervals):
-    data = fetch_data("get_energy_mix")
-    df = pd.DataFrame(data, columns=["Energy Type", "Total Generation"])
-    figure = px.pie(
+
+update_energy_mix_pie_chart = generate_callback(
+    "energy-mix-pie-chart",
+    "get_energy_mix",
+    lambda df: px.pie(
         df, names="Energy Type", values="Total Generation", title="Energy Mix"
-    )
-    return figure
-
-
-@app.callback(
-    Output("demand-breakdown-bar-chart", "figure"),
-    [Input("interval-component", "n_intervals")],
+    ),
 )
-def update_demand_breakdown_bar_chart(n_intervals):
-    data = fetch_data("get_demand_breakdown")
-    df = pd.DataFrame(
-        data,
-        columns=[
-            "Time",
-            "Net Demand",
-            "Gross Demand",
-            "Pumped Storage",
-            "Exports",
-            "Station Load",
-            "Embedded Wind",
-            "Embedded Solar",
-            "Actual Net",
-            "Actual Gross",
-        ],
-    )
-    figure = px.bar(
-        df,
-        x="Time",
-        y=[
-            "Net Demand",
-            "Gross Demand",
-            "Pumped Storage",
-            "Exports",
-            "Station Load",
-            "Embedded Wind",
-            "Embedded Solar",
-            "Actual Net",
-            "Actual Gross",
-        ],
-        title="Demand Breakdown",
-    )
-    return figure
 
+update_demand_breakdown_bar_chart = generate_callback(
+    "demand-breakdown-bar-chart",
+    "get_demand_breakdown",
+    lambda df: px.bar(df, x="Time", y=df.columns[1:], title="Demand Breakdown"),
+)
 
 if __name__ == "__main__":
     app.run_server(debug=True)

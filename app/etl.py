@@ -1,81 +1,93 @@
 import requests
+import logging
 from sqlalchemy import create_engine, and_
 from sqlalchemy.orm import sessionmaker
-from db import Base, Period, Demand, Generation, EnergyType
-
+from db import Base, Period, Demand, Generation, EnergyType, engine
 from datetime import datetime
 import dateutil.parser
 
-# Database setup - replace 'sqlite:///generation.db' with your database URI
-engine = create_engine("sqlite:///generation.db")
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 Base.metadata.create_all(engine)
 Session = sessionmaker(bind=engine)
 
-# Extract: Fetch data from the API
-url = "https://www.energydashboard.co.uk/api/today/generation"
-response = requests.get(url)
-data = response.json()
 
-# Transform: Validate and structure the data
-# Assuming the JSON keys match the model attributes exactly
-half_hourly_data = data["halfHourlyData"]
+def extract(url):
+    response = requests.get(url)
+    data = response.json()
+    return data["halfHourlyData"]
 
-# Load: Insert data into the database
-session = Session()
-try:
+
+def transform(half_hourly_data):
+    transformed_data = []
     for entry in half_hourly_data:
-        start_time = dateutil.parser.isoparse(entry["start"])
-        end_time = dateutil.parser.isoparse(entry["end"])
+        transformed_entry = {
+            "period": Period.from_dict(entry),
+            "demand": Demand.from_dict(
+                entry["demandValues"], None
+            ),  # period will be updated in load step
+            "generation": Generation.from_dict(
+                entry, None
+            ),  # period will be updated in load step
+            "energy_types": EnergyType.from_dict(
+                entry["generationValues"], None
+            ),  # period will be updated in load step
+        }
+        transformed_data.append(transformed_entry)
+    return transformed_data
 
-        # Check if the period already exists in the database
-        period = (
-            session.query(Period)
-            .filter(and_(Period.start == start_time, Period.end == end_time))
-            .first()
-        )
 
-        if period is None:
-            period = Period(
-                start=start_time,
-                end=end_time,
-                carbon_intensity=entry["carbonIntensity"],
-                settlement_period=entry["settlementPeriod"],
-            )
-            session.add(period)
-            session.flush()  # This will assign an ID to the period without committing the transaction
-
-            demand = Demand(
-                period_id=period.id,
-                net=entry["demandValues"]["demandNet"],
-                gross=entry["demandValues"]["demandGross"],
-                pumped_storage=entry["demandValues"]["pumpedStorage"],
-                exports=entry["demandValues"]["exports"],
-                station_load=entry["demandValues"]["stationLoad"],
-                embedded_wind=entry["demandValues"]["embeddedWind"],
-                embedded_solar=entry["demandValues"]["embeddedSolar"],
-                actual_net=entry["demandValues"]["actualNet"],
-                actual_gross=entry["demandValues"]["actualGross"],
-            )
-            session.add(demand)
-
-            generation = Generation(period_id=period.id, total=entry["generationTotal"])
-            session.add(generation)
-
-            for gen_type, values in entry["generationValues"].items():
-                energy_type = EnergyType(
-                    period_id=period.id,
-                    type_name=gen_type,
-                    total=values["total"],
-                    percentage=values["percentage"],
+def load(transformed_data):
+    session = Session()
+    try:
+        for entry in transformed_data:
+            period = (
+                session.query(Period)
+                .filter(
+                    and_(
+                        Period.start == entry["period"].start,
+                        Period.end == entry["period"].end,
+                    )
                 )
-                session.add(energy_type)
+                .first()
+            )
+            if period is None:
+                period = entry["period"]
+                session.add(period)
+                session.flush()  # This will assign an ID to the period without committing the transaction
+
+            entry["demand"].period = period
+            entry["generation"].period = period
+            for energy_type in entry["energy_types"]:
+                energy_type.period = period
+
+            session.add(entry["demand"])
+            session.add(entry["generation"])
+            session.add_all(entry["energy_types"])
 
             # Commit the transaction
             session.commit()
-except Exception as e:
-    session.rollback()
-    raise e
-finally:
-    session.close()
 
-print("ETL process completed.")
+        # Log the number of new rows added
+        new_rows_count = len(session.new)
+        logger.info(f"New rows added: {new_rows_count}")
+    except Exception as e:
+        session.rollback()
+        logger.exception("An error occurred while loading data into the database.")
+        raise e
+    finally:
+        session.close()
+
+
+def etl_process(url):
+    data = extract(url)
+    transformed_data = transform(data)
+    load(transformed_data)
+    print("ETL process completed.")
+
+
+if __name__ == "__main__":
+    url = "https://www.energydashboard.co.uk/api/today/generation"
+    etl_process(url)
