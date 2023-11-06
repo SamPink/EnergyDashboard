@@ -1,11 +1,11 @@
 import dash
 import dash_bootstrap_components as dbc
-from dash import html, dcc, Input, Output
+from dash import Input, Output, dcc, html
+import pandas as pd
 import plotly.express as px
 from sqlalchemy.orm import scoped_session, sessionmaker
-from db import engine
-from dal import DataAccessLayer
-import pandas as pd
+from data.db import engine
+from data.dal import DataAccessLayer
 
 # Database setup
 Session = scoped_session(sessionmaker(bind=engine))
@@ -14,6 +14,50 @@ Session = scoped_session(sessionmaker(bind=engine))
 BOOTSTRAP_THEME = dbc.themes.FLATLY
 
 app = dash.Dash(__name__, external_stylesheets=[BOOTSTRAP_THEME])
+
+# the style arguments for the sidebar. We use position:fixed and a fixed width
+SIDEBAR_STYLE = {
+    "position": "fixed",
+    "top": 0,
+    "left": 0,
+    "bottom": 0,
+    "width": "16rem",
+    "padding": "2rem 1rem",
+    "background-color": "#f8f9fa",
+}
+
+# the styles for the main content position it to the right of the sidebar and
+# add some padding.
+CONTENT_STYLE = {
+    "margin-left": "18rem",
+    "margin-right": "2rem",
+    "padding": "2rem 1rem",
+}
+
+sidebar = html.Div(
+    [
+        html.H2("Sidebar", className="display-4"),
+        html.Hr(),
+        html.P("A simple sidebar layout with navigation links", className="lead"),
+        dbc.Nav(
+            [
+                dbc.NavLink("Carbon Intensity", href="/page-1", active="exact"),
+                dbc.NavLink("Demand vs Generation", href="/page-2", active="exact"),
+                dbc.NavLink("Energy Mix", href="/page-3", active="exact"),
+                dbc.NavLink("Demand Breakdown", href="/page-4", active="exact"),
+                dbc.NavLink("Weather", href="/page-5", active="exact"),
+                dbc.NavLink("Wind Data", href="/page-6", active="exact"),
+            ],
+            vertical=True,
+            pills=True,
+        ),
+    ],
+    style=SIDEBAR_STYLE,
+)
+
+content = html.Div(id="page-content", style=CONTENT_STYLE)
+
+app.layout = html.Div([dcc.Location(id="url"), sidebar, content])
 
 
 # Define a function to fetch data from the database
@@ -24,117 +68,131 @@ def fetch_data(dal_method):
     return data
 
 
-# Define the layout of the application, including explanatory text
-app.layout = html.Div(
-    className="container",
-    children=[
-        html.H1("Energy Generation Dashboard", className="header-title"),
-        html.Div(
-            className="text-box",
-            children=[
-                dcc.Markdown(
-                    """
-                    ## Carbon Intensity Over Time
-                    This graph shows the carbon intensity of electricity generation over time. 
-                    Lower carbon intensity indicates a cleaner energy mix.
-                """
-                )
-            ],
-        ),
-        dcc.Graph(id="carbon-intensity-graph"),
-        html.Div(
-            className="text-box",
-            children=[
-                dcc.Markdown(
-                    """
-                    ## Demand vs Generation Over Time
-                    This graph compares the total electricity demand with the total generation over time.
-                    It highlights the balance between energy consumption and production.
-                """
-                )
-            ],
-        ),
-        dcc.Graph(id="demand-generation-graph"),
-        html.Div(
-            className="text-box",
-            children=[
-                dcc.Markdown(
-                    """
-                    ## Energy Mix
-                    This pie chart displays the proportion of different energy types contributing to the total generation.
-                    A diverse energy mix can be more resilient and sustainable.
-                """
-                )
-            ],
-        ),
-        dcc.Graph(id="energy-mix-pie-chart"),
-        html.Div(
-            className="text-box",
-            children=[
-                dcc.Markdown(
-                    """
-                    ## Demand Breakdown
-                    The bar chart shows the breakdown of electricity demand over time, 
-                    including net demand, gross demand, and various other metrics.
-                """
-                )
-            ],
-        ),
-        dcc.Graph(id="demand-breakdown-bar-chart"),
-        # Interval component to trigger callbacks
-        dcc.Interval(id="interval-component", interval=60000, n_intervals=0),
-    ],
-)
-
-
-# Callback function generator to reduce duplication
-def generate_callback(output_component_id, dal_method, figure_generator):
-    @app.callback(
-        Output(output_component_id, "figure"),
-        [Input("interval-component", "n_intervals")],
-    )
-    def update_graph(n_intervals):
-        data = fetch_data(dal_method)
+@app.callback(Output("page-content", "children"), [Input("url", "pathname")])
+def render_page_content(pathname):
+    if pathname in ["/", "/page-1"]:
+        data = fetch_data("get_carbon_intensity_over_time")
         df = pd.DataFrame(data)
-        figure = figure_generator(df)
-        return figure
+        figure = px.line(
+            df, x="start", y="carbon_intensity", title="Carbon Intensity Over Time"
+        )
+        return html.Div(
+            [
+                dcc.Markdown(
+                    """
+                ## Carbon Intensity Over Time
+                This graph shows the carbon intensity of electricity generation over time. 
+                Lower carbon intensity indicates a cleaner energy mix.
+            """
+                ),
+                dcc.Graph(figure=figure),
+            ]
+        )
+    elif pathname == "/page-2":
+        data = fetch_data("get_total_demand_and_generation_over_time")
+        df = pd.DataFrame(data)
+        figure = px.line(
+            df,
+            x="start",
+            y=["total_demand", "total_generation"],
+            title="Demand vs Generation Over Time",
+        )
+        return html.Div(
+            [
+                dcc.Markdown(
+                    """
+                ## Demand vs Generation Over Time
+                This graph compares the total electricity demand with the total generation over time.
+                It highlights the balance between energy consumption and production.
+            """
+                ),
+                dcc.Graph(figure=figure),
+            ]
+        )
+    elif pathname == "/page-3":
+        data = fetch_data("get_energy_mix")
+        df = pd.DataFrame(data)
+        figure = px.pie(
+            df, names="type_name", values="total_generation", title="Energy Mix"
+        )
+        return html.Div(
+            [
+                dcc.Markdown(
+                    """
+                ## Energy Mix
+                This pie chart displays the proportion of different energy types contributing to the total generation.
+                A diverse energy mix can be more resilient and sustainable.
+            """
+                ),
+                dcc.Graph(figure=figure),
+            ]
+        )
+    elif pathname == "/page-4":
+        data = fetch_data("get_demand_breakdown")
+        df = pd.DataFrame(data)
+        figure = px.bar(df, x="start", y=df.columns[1:], title="Demand Breakdown")
+        return html.Div(
+            [
+                dcc.Markdown(
+                    """
+                ## Demand Breakdown
+                The bar chart shows the breakdown of electricity demand over time, 
+                including net demand, gross demand, and various other metrics.
+            """
+                ),
+                dcc.Graph(figure=figure),
+            ]
+        )
+    elif pathname == "/page-5":
+        data = fetch_data("get_weather")
+        df = pd.DataFrame(data)
+        # plot temperature over time
+        fig = px.line(df, x="time", y="temp_c", title="Temperature over time")
 
-    return update_graph
+        # plot wind speed over time
+        fig2 = px.line(df, x="time", y="wind_mph", title="Wind speed over time")
+        return html.Div(
+            [
+                dcc.Markdown(
+                    """
+                ## Weather
+                The line charts show the temperature and wind speed over time.
+            """
+                ),
+                dcc.Graph(figure=fig),
+                dcc.Graph(figure=fig2),
+            ]
+        )
+    elif pathname == "/page-6":
+        data = fetch_data("get_wind_data")
+        df = pd.DataFrame(data, columns=["hour", "wind_speed", "wind_generation"])
+        figure = px.line(df, x="hour", y="wind_speed", title="Wind Speed Over Time")
+        figure2 = px.line(
+            df, x="hour", y="wind_generation", title="Wind Energy Generation Over Time"
+        )
+        return html.Div(
+            [
+                dcc.Markdown(
+                    """
+                ## Wind Data
+                The line charts show the wind speed and wind energy generation over time.
+            """
+                ),
+                dcc.Graph(figure=figure),
+                dcc.Graph(figure=figure2),
+            ]
+        )
 
+    # If the user tries to reach a different page, return a 404 message
+    return html.Div(
+        [
+            html.H1("404: Not found", className="text-danger"),
+            html.Hr(),
+            html.P(f"The pathname {pathname} was not recognised..."),
+        ],
+        className="p-3 bg-light rounded-3",
+    )
 
-# Generate callback functions for each graph
-update_carbon_intensity_graph = generate_callback(
-    "carbon-intensity-graph",
-    "get_carbon_intensity_over_time",
-    lambda df: px.line(
-        df, x="Time", y="Carbon Intensity", title="Carbon Intensity Over Time"
-    ),
-)
-
-update_demand_generation_graph = generate_callback(
-    "demand-generation-graph",
-    "get_total_demand_and_generation_over_time",
-    lambda df: px.line(
-        df,
-        x="Time",
-        y=["Total Demand", "Total Generation"],
-        title="Demand vs Generation Over Time",
-    ),
-)
-
-update_energy_mix_pie_chart = generate_callback(
-    "energy-mix-pie-chart",
-    "get_energy_mix",
-    lambda df: px.pie(
-        df, names="Energy Type", values="Total Generation", title="Energy Mix"
-    ),
-)
-
-update_demand_breakdown_bar_chart = generate_callback(
-    "demand-breakdown-bar-chart",
-    "get_demand_breakdown",
-    lambda df: px.bar(df, x="Time", y=df.columns[1:], title="Demand Breakdown"),
-)
 
 if __name__ == "__main__":
     app.run_server(debug=True)

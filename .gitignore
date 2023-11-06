@@ -5,3 +5,10 @@
 /generation.db
 /generation.json
 /myenv
+data.db
+***/__pycache__/***
+app/etl/historic/hourly_forecasts.json
+data/***
+app/etl/historic/generation (1).json
+notebooks/***
+data.db
