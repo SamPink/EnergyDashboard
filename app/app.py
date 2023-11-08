@@ -7,6 +7,8 @@ from sqlalchemy.orm import scoped_session, sessionmaker
 from data.db import engine
 from data.dal import DataAccessLayer
 
+from reports.correlation import get_corr
+
 # Database setup
 Session = scoped_session(sessionmaker(bind=engine))
 
@@ -42,11 +44,10 @@ sidebar = html.Div(
         dbc.Nav(
             [
                 dbc.NavLink("Carbon Intensity", href="/page-1", active="exact"),
-                dbc.NavLink("Demand vs Generation", href="/page-2", active="exact"),
                 dbc.NavLink("Energy Mix", href="/page-3", active="exact"),
-                dbc.NavLink("Demand Breakdown", href="/page-4", active="exact"),
                 dbc.NavLink("Weather", href="/page-5", active="exact"),
                 dbc.NavLink("Wind Data", href="/page-6", active="exact"),
+                dbc.NavLink("Correlation Matrix", href="/page-7", active="exact"),
             ],
             vertical=True,
             pills=True,
@@ -88,27 +89,6 @@ def render_page_content(pathname):
                 dcc.Graph(figure=figure),
             ]
         )
-    elif pathname == "/page-2":
-        data = fetch_data("get_total_demand_and_generation_over_time")
-        df = pd.DataFrame(data)
-        figure = px.line(
-            df,
-            x="start",
-            y=["total_demand", "total_generation"],
-            title="Demand vs Generation Over Time",
-        )
-        return html.Div(
-            [
-                dcc.Markdown(
-                    """
-                ## Demand vs Generation Over Time
-                This graph compares the total electricity demand with the total generation over time.
-                It highlights the balance between energy consumption and production.
-            """
-                ),
-                dcc.Graph(figure=figure),
-            ]
-        )
     elif pathname == "/page-3":
         data = fetch_data("get_energy_mix")
         df = pd.DataFrame(data)
@@ -122,22 +102,6 @@ def render_page_content(pathname):
                 ## Energy Mix
                 This pie chart displays the proportion of different energy types contributing to the total generation.
                 A diverse energy mix can be more resilient and sustainable.
-            """
-                ),
-                dcc.Graph(figure=figure),
-            ]
-        )
-    elif pathname == "/page-4":
-        data = fetch_data("get_demand_breakdown")
-        df = pd.DataFrame(data)
-        figure = px.bar(df, x="start", y=df.columns[1:], title="Demand Breakdown")
-        return html.Div(
-            [
-                dcc.Markdown(
-                    """
-                ## Demand Breakdown
-                The bar chart shows the breakdown of electricity demand over time, 
-                including net demand, gross demand, and various other metrics.
             """
                 ),
                 dcc.Graph(figure=figure),
@@ -180,6 +144,20 @@ def render_page_content(pathname):
                 ),
                 dcc.Graph(figure=figure),
                 dcc.Graph(figure=figure2),
+            ]
+        )
+    elif pathname == "/page-7":
+        corr = get_corr()
+
+        return html.Div(
+            [
+                dcc.Markdown(
+                    """
+                ## Correlation Matrix
+                The correlation matrix shows the correlation between weather variables and energy types.
+            """
+                ),
+                corr,
             ]
         )
 

@@ -6,13 +6,14 @@ from sqlalchemy.orm import sessionmaker
 from ...data.models import Weather
 
 import datetime
+import os
 
 
-def fetch_weather():
-    api_key = "dd727529d2a245248d3160947230311"
-    # Determine the end date (today) and start date (two months ago)
+def fetch_weather(days):
+    api_key = os.environ.get("WEATHER_API_KEY")
+
     end_date = datetime.datetime.now()
-    start_date = end_date - datetime.timedelta(days=1)
+    start_date = end_date - datetime.timedelta(days=days)
 
     # Create a list of dates between start_date and end_date
     date_list = [
@@ -52,15 +53,8 @@ def load_weather_data(weathers, session):
     session.commit()
 
 
-def run():
-    # get the folder of this file
-    import os
-
-    path = os.path.dirname(os.path.abspath(__file__))
-
-    # read hourly_forecasts from a file from this folder
-    with open(path + "/hourly_forecasts.json") as f:
-        hourly_forecasts = json.load(f)
+def run(days=90):
+    hourly_forecasts = fetch_weather(days)
 
     if hourly_forecasts:
         weathers = transform_weather_data(hourly_forecasts)
