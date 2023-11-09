@@ -53,8 +53,9 @@ class Generation(Base):
             total=data["generationTotal"],
         )
 
+    # Define the EnergyType model
 
-# Define the EnergyType model
+
 class EnergyType(Base):
     __tablename__ = "energy_types"
     id = Column(Integer, primary_key=True)
@@ -82,6 +83,8 @@ class Weather(Base):
     id = Column(Integer, primary_key=True)
     time_epoch = Column(Integer)
     time = Column(DateTime, unique=True)
+    # add a prediction column defult to default to 0
+    preiction = Column(Integer, default=0)
     temp_c = Column(Float)
     temp_f = Column(Float)
     is_day = Column(Integer)

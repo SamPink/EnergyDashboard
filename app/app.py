@@ -157,7 +157,8 @@ def render_page_content(pathname):
                 The correlation matrix shows the correlation between weather variables and energy types.
             """
                 ),
-                corr,
+                # display correlation matrix as dataframe
+                dcc.Markdown(corr.to_markdown()),
             ]
         )
 

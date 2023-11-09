@@ -1,4 +1,5 @@
 import requests
+import os
 from sqlalchemy.orm import sessionmaker
 
 # Import your Weather model here
@@ -28,6 +29,8 @@ def fetch_tomorrows_weather(api_key, location="London"):
 
 
 def transform_weather_data(daily_forecast):
+    # add prediction = 1 to each entry
+    [daily_forecast.update({"prediction": 1}) for daily_forecast in daily_forecast]
     return [Weather.from_dict(hour) for hour in daily_forecast]
 
     # return Weather.from_dict(daily_forecast)
@@ -41,7 +44,7 @@ def load_weather_data(weather):
 
 
 def run():
-    api_key = "dd727529d2a245248d3160947230311"  # Replace with your actual API key
+    api_key = api_key = os.environ.get("WEATHER_API_KEY")
 
     # Fetch tomorrow's weather forecast
     forecast = fetch_tomorrows_weather(api_key)
